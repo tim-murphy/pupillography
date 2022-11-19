@@ -6,3 +6,6 @@ To use:
 2. Have participant look at a fixation target and position eye tracker to have clear view of both eyes.
 3. Start pupillography.py with optional outfile.
 4. Data collection will continue until the preview window is closed.
+
+Required python packages:
+ - matplotlib
