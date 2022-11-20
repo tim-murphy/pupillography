@@ -15,11 +15,12 @@ FRAMES_PER_SECOND = 8
 FRAMES_PER_WINDOW = WINDOW_SIZE_SECONDS * FRAMES_PER_SECOND
 PUPIL_MIN_SIZE_MM = 0
 PUPIL_MAX_SIZE_MM = 10
-INVALID_READING = -1
+INVALID_READING = 0
 GAZEPOINT_REFRESH = 150
 
 RIGHT = 0
 LEFT = 1
+DELTA = 2
 
 # hackety hack hack
 global keepRunning
@@ -28,7 +29,7 @@ def onClose(event):
     keepRunning = False
 
 def printUsage():
-    print("Usage:", sys.argv[0], "<outfile=None>")
+    print("Usage:", sys.argv[0], "<outfile_csv=None>")
 
 if __name__ == '__main__':
     outfile = None
@@ -55,20 +56,18 @@ if __name__ == '__main__':
     # regex to extract data
     pupilRegex = re.compile(r'^<REC TIME="(.*)" LPMM="(.*)" LPMMV="(.*)" RPMM="(.*)" RPMMV="(.*)" />\r\n$')
 
-    # plot setup
-    # right and left side, each with X and Y lists
-    plotData = [[[], []], [[], []]]
+    # each x-coord has right, left, and delta values
+    # accessed as plotYData[y-set]
+    xData = [x / FRAMES_PER_SECOND for x in range(FRAMES_PER_WINDOW)]
+    plotYData = [[], [], []]
+    defaultYData = [INVALID_READING] * FRAMES_PER_WINDOW
+    for j in (RIGHT, LEFT, DELTA):
+        plotYData[j] = defaultYData.copy()
 
     # exit on close window
     plt.figure().canvas.mpl_connect('close_event', onClose)
 
-    for i in range(FRAMES_PER_WINDOW):
-        plotData[RIGHT][0].append(i)
-        plotData[RIGHT][1].append(INVALID_READING)
-        plotData[LEFT][0].append(i)
-        plotData[LEFT][1].append(INVALID_READING)
-
-    print("Time,Right_Diameter,Right_Valid,Left_Diameter,Left_Valid", file=outfile)
+    print("Time,Right_Diameter,Left_Diameter,Delta,Right_Valid,Left_Valid", file=outfile)
 
     keepRunning = True
     while keepRunning:
@@ -83,24 +82,25 @@ if __name__ == '__main__':
             lpmmv = bool(pupilData.group(3) == "1")
             rpmm = float(pupilData.group(4))
             rpmmv = bool(pupilData.group(5) == "1")
+            delta = (0 if not (lpmmv and rpmmv) else abs(lpmm - rpmm))
 
             if not lpmmv:
                 lpmm = INVALID_READING
             if not rpmmv:
                 rpmm = INVALID_READING
 
-            print(elapsed, rpmm, (1 if rpmmv else 0), lpmm, (1 if lpmmv else 0), sep=',', file=outfile)
+            print(elapsed, rpmm, lpmm, delta, (1 if rpmmv else 0), (1 if lpmmv else 0), sep=',', file=outfile)
 
             # clean up the plot
             plt.cla()
             plt.axis([0, WINDOW_SIZE_SECONDS, PUPIL_MIN_SIZE_MM, PUPIL_MAX_SIZE_MM])
             xPos = int(elapsed * FRAMES_PER_SECOND % FRAMES_PER_WINDOW)
 
-            for side, colour, label, diam in [(LEFT, "blue", "Left", lpmm), (RIGHT, "red", "Right", rpmm)]:
-                plotData[side][1][xPos] = diam
-
-                xData = [x / FRAMES_PER_SECOND for x in plotData[side][0]]
-                plt.plot(xData, plotData[side][1], c=colour, label=label)
+            for side, colour, label, diam in [(LEFT, "blue", "Left", lpmm),
+                                              (RIGHT, "red", "Right", rpmm),
+                                              (DELTA, "green", "Difference", delta)]:
+                plotYData[side][xPos] = diam
+                plt.plot(xData, plotYData[side], c=colour, label=label)
 
             # add the "current time" line
             plt.plot([xPos / FRAMES_PER_SECOND, xPos / FRAMES_PER_SECOND], [PUPIL_MIN_SIZE_MM, PUPIL_MAX_SIZE_MM], c="black", label="Current Time")
