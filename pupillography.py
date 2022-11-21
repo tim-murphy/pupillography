@@ -48,7 +48,13 @@ if __name__ == '__main__':
 
     # connect to the Gazepoint
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect(ADDRESS)
+
+    try:
+        sock.connect(ADDRESS)
+    except:
+        print("ERROR: could not connect to Gazepoint (addr: ", HOST, ":", PORT, ") - is Gazepoint Control running?", sep="")
+        sys.exit(1)
+
     sock.send(str.encode('<SET ID="ENABLE_SEND_TIME" STATE="1" />\r\n'))
     sock.send(str.encode('<SET ID="ENABLE_SEND_PUPILMM" STATE="1" />\r\n'))
     sock.send(str.encode('<SET ID="ENABLE_SEND_DATA" STATE="1" />\r\n'))
