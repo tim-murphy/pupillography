@@ -1,5 +1,5 @@
 # Pupillography
-Very basic pupillography using the Gazepoint GP3 HD.
+Very basic pupillography using the Gazepoint GP3 HD running on Python 3.
 To use:
 
 0. Install required packages (see below)
