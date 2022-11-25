@@ -79,7 +79,8 @@ if __name__ == '__main__':
         plotYData[j] = defaultYData.copy()
 
     # plot config: exit on close window
-    plt.figure().canvas.mpl_connect('close_event', onClose)
+    plt.figure(0).canvas.mpl_connect('close_event', onClose)
+    plt.figure(0).canvas.manager.set_window_title("Pupillography (close window to exit)")
 
     with open(outpath, 'w') as outfile:
         print("Writing to file:", outpath)
