@@ -11,13 +11,13 @@ HOST = '127.0.0.1'
 PORT = 4242
 ADDRESS = (HOST, PORT)
 
-WINDOW_SIZE_SECONDS = 60
+WINDOW_SIZE_SECONDS = 30
 FRAMES_PER_SECOND = 8
 FRAMES_PER_WINDOW = WINDOW_SIZE_SECONDS * FRAMES_PER_SECOND
 PUPIL_MIN_SIZE_MM = 0
 PUPIL_MAX_SIZE_MM = 10
 INVALID_READING = 0
-GAZEPOINT_REFRESH = 150
+GAZEPOINT_REFRESH = 60
 
 RIGHT = 0
 LEFT = 1
@@ -68,19 +68,29 @@ if __name__ == '__main__':
     ### set up bits we will use in the data processing ###
 
     # regex to extract data
-    pupilRegex = re.compile(r'^<REC TIME="(.*)" LPMM="(.*)" LPMMV="(.*)" RPMM="(.*)" RPMMV="(.*)" />\r\n$')
+    dataRegex = re.compile(r'^<REC TIME="(.*)" LPOGX="(.*)" LPOGY="(.*)" LPOGV="(.*)" RPOGX="(.*)" RPOGY="(.*)" RPOGV="(.*)" LPMM="(.*)" LPMMV="(.*)" RPMM="(.*)" RPMMV="(.*)" />\r\n$')
 
     # each x-coord has right, left, and delta values
-    # accessed as plotYData[y-set]
+    # accessed as plotPupilData[y-set]
+    # similar for X and Y coords, but no delta
     xData = [x / FRAMES_PER_SECOND for x in range(FRAMES_PER_WINDOW)]
-    plotYData = [[], [], []]
+    plotPupilData = [[], [], []]
+    plotXData = [[], []]
+    plotYData = [[], []]
     defaultYData = [INVALID_READING] * FRAMES_PER_WINDOW
     for j in (RIGHT, LEFT, DELTA):
+        plotPupilData[j] = defaultYData.copy()
+
+    for j in (RIGHT, LEFT):
+        plotXData[j] = defaultYData.copy()
         plotYData[j] = defaultYData.copy()
 
+    # create three plots: pupils, x-pos, and y-pos
+    fig, axs = plt.subplots(3)
+
     # plot config: exit on close window
-    plt.figure(0).canvas.mpl_connect('close_event', onClose)
-    plt.figure(0).canvas.manager.set_window_title("Pupillography (close window to exit)")
+    fig.canvas.mpl_connect('close_event', onClose)
+    fig.canvas.manager.set_window_title("Pupil and X/Y Pos (close window to exit)")
 
     with open(outpath, 'w') as outfile:
         print("Writing to file:", outpath)
@@ -96,9 +106,11 @@ if __name__ == '__main__':
 
             sock.send(str.encode('<SET ID="ENABLE_SEND_TIME" STATE="1" />\r\n'))
             sock.send(str.encode('<SET ID="ENABLE_SEND_PUPILMM" STATE="1" />\r\n'))
+            sock.send(str.encode('<SET ID="ENABLE_SEND_POG_LEFT" STATE="1" />\r\n'))
+            sock.send(str.encode('<SET ID="ENABLE_SEND_POG_RIGHT" STATE="1" />\r\n'))
             sock.send(str.encode('<SET ID="ENABLE_SEND_DATA" STATE="1" />\r\n'))
 
-            print("Time,Right Pupil,Left Pupil,Difference,Right Valid,Left Valid", file=outfile)
+            print("Time,Right Pupil,Left Pupil,Difference,Right Pupil Valid,Left Pupil Valid,Right X,Left X,Right Y,Left Y,Left Y,Right Pos Valid,Left Pos Valid", file=outfile)
 
             keepRunning = True
             firstDataTime = None
@@ -106,14 +118,21 @@ if __name__ == '__main__':
                 rxstr = bytes.decode(sock.recv(512))
 
                 # pull out the pupil size data
-                pupilData = pupilRegex.match(rxstr)
+                pupilData = dataRegex.match(rxstr)
 
                 if pupilData is not None:
+                    # we subtract 0.5 from position data to set 0,0 as the middle of the screen
                     elapsed = float(pupilData.group(1))
-                    lpmm = float(pupilData.group(2))
-                    lpmmv = bool(pupilData.group(3) == "1")
-                    rpmm = float(pupilData.group(4))
-                    rpmmv = bool(pupilData.group(5) == "1")
+                    lpogx = float(pupilData.group(2)) - 0.5
+                    lpogy = (float(pupilData.group(3)) - 0.5) * -1
+                    lpogv = bool(pupilData.group(4) == "1")
+                    rpogx = float(pupilData.group(5)) - 0.5
+                    rpogy = (float(pupilData.group(6)) - 0.5) * -1
+                    rpogv = bool(pupilData.group(7) == "1")
+                    lpmm = float(pupilData.group(8))
+                    lpmmv = bool(pupilData.group(9) == "1")
+                    rpmm = float(pupilData.group(10))
+                    rpmmv = bool(pupilData.group(11) == "1")
                     delta = (0 if not (lpmmv and rpmmv) else abs(lpmm - rpmm))
 
                     if not lpmmv:
@@ -127,26 +146,51 @@ if __name__ == '__main__':
                         firstDataTime = elapsed
                     elapsed -= firstDataTime
 
-                    print(elapsed, rpmm, lpmm, delta, (1 if rpmmv else 0), (1 if lpmmv else 0), sep=',', file=outfile)
+                    print(elapsed, rpmm, lpmm, delta, (1 if rpmmv else 0), (1 if lpmmv else 0),
+                          rpogx, lpogx, rpogy, lpogy, (1 if rpogv else 0), (1 if lpogv else 0),
+                          sep=',', file=outfile)
 
                     # clean up the plot
-                    plt.cla()
-                    plt.axis([0, WINDOW_SIZE_SECONDS, PUPIL_MIN_SIZE_MM, PUPIL_MAX_SIZE_MM])
+                    for a in range(3):
+                        axs[a].clear()
+
+                    axs[0].set_xlim([0, WINDOW_SIZE_SECONDS])
+                    axs[0].set_ylim([PUPIL_MIN_SIZE_MM, PUPIL_MAX_SIZE_MM])
+
+                    for a in (1, 2):
+                        axs[a].sharex(axs[0])
+                        axs[a].set_ylim([-0.5, 0.5])
+
                     xPos = int(elapsed * FRAMES_PER_SECOND % FRAMES_PER_WINDOW)
 
+                    # pupil data
                     for side, colour, label, diam in [(LEFT, "blue", "Left", lpmm),
                                                       (RIGHT, "red", "Right", rpmm),
                                                       (DELTA, "green", "Difference", delta)]:
-                        plotYData[side][xPos] = diam
-                        plt.plot(xData, plotYData[side], c=colour, label=label)
+                        plotPupilData[side][xPos] = diam
+                        axs[0].plot(xData, plotPupilData[side], c=colour, label=label)
+
+
+                    # X/Y pos data
+                    for side, colour, label, x, y in [(LEFT, "blue", "Left", lpogx, lpogy),
+                                                      (RIGHT, "red", "Right", rpogx, rpogy)]:
+                        plotXData[side][xPos] = x
+                        plotYData[side][xPos] = y
+                        axs[1].plot(xData, plotXData[side], c=colour, label=label)
+                        axs[2].plot(xData, plotYData[side], c=colour, label=label)
 
                     # add the "current time" line
-                    plt.plot([xPos / FRAMES_PER_SECOND, xPos / FRAMES_PER_SECOND], [PUPIL_MIN_SIZE_MM, PUPIL_MAX_SIZE_MM], c="black", label="Current Time")
+                    for a in range(3):
+                        axs[a].plot([xPos / FRAMES_PER_SECOND, xPos / FRAMES_PER_SECOND], [-0.5, PUPIL_MAX_SIZE_MM], c="black", label="Current Time")
 
-                    plt.title("Pupillography Preview")
-                    plt.xlabel("Time (moving window in seconds)")
-                    plt.ylabel("Pupil diameter (millimetres)")
-                    plt.legend()
+                    axs[0].set_title("Pupil size and X/Y position")
+                    axs[0].set(ylabel="Pupil (mm)")
+                    axs[1].set(ylabel="X-Pos")
+                    axs[2].set(xlabel="Time (moving window in seconds)", ylabel="Y-Pos")
+
+                    for a in range(3):
+                        axs[a].legend()
+
                     plt.pause(1 / GAZEPOINT_REFRESH)
 
                 # end if pupilData is not None
