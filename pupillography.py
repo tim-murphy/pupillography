@@ -1,11 +1,14 @@
 # Basic pupillography using the Gazepoint GP3 HD eye tracker
 
+import ctypes
 from datetime import datetime
 import matplotlib.pyplot as plt
 import os
 import re
 import socket
 import sys
+
+from webcam import PupilWebcam
 
 HOST = '127.0.0.1'
 PORT = 4242
@@ -104,16 +107,28 @@ if __name__ == '__main__':
                 pressEnter("Press enter to close the program")
                 sys.exit(1)
 
+            # start the webcam preview
+            webcam = PupilWebcam()
+            webcam.startPreview()
+
+            ctypes.windll.user32.MessageBoxW(0, "Move the webcam preview window and press OK", "Window Position", 0)
+
             sock.send(str.encode('<SET ID="ENABLE_SEND_TIME" STATE="1" />\r\n'))
             sock.send(str.encode('<SET ID="ENABLE_SEND_PUPILMM" STATE="1" />\r\n'))
             sock.send(str.encode('<SET ID="ENABLE_SEND_POG_LEFT" STATE="1" />\r\n'))
             sock.send(str.encode('<SET ID="ENABLE_SEND_POG_RIGHT" STATE="1" />\r\n'))
             sock.send(str.encode('<SET ID="ENABLE_SEND_DATA" STATE="1" />\r\n'))
 
-            print("Time,Right Pupil,Left Pupil,Difference,Right Pupil Valid,Left Pupil Valid,Right X,Left X,Right Y,Left Y,Left Y,Right Pos Valid,Left Pos Valid", file=outfile)
+            print("SystemTime,ElapsedTime,Right Pupil,Left Pupil,Difference,Right Pupil Valid,Left Pupil Valid,Right X,Left X,Right Y,Left Y,Left Y,Right Pos Valid,Left Pos Valid", file=outfile)
 
             keepRunning = True
             firstDataTime = None
+
+            # FIXME this is confusing
+            # line[0] has three plots: left, right, dela
+            # line[1] and line[2] only have left and right
+            line = [[[], [], []], [[], []], [[], []]] # this will store the plot line for live updating
+            currentLine = [[], [], []] # the vertical line showing the current time
             while keepRunning:
                 rxstr = bytes.decode(sock.recv(512))
 
@@ -122,6 +137,7 @@ if __name__ == '__main__':
 
                 if pupilData is not None:
                     # we subtract 0.5 from position data to set 0,0 as the middle of the screen
+                    systime = datetime.now().strftime('%Y-%m-%d_%H:%M:%S.%f')
                     elapsed = float(pupilData.group(1))
                     lpogx = float(pupilData.group(2)) - 0.5
                     lpogy = (float(pupilData.group(3)) - 0.5) * -1
@@ -146,20 +162,9 @@ if __name__ == '__main__':
                         firstDataTime = elapsed
                     elapsed -= firstDataTime
 
-                    print(elapsed, rpmm, lpmm, delta, (1 if rpmmv else 0), (1 if lpmmv else 0),
+                    print(systime, elapsed, rpmm, lpmm, delta, (1 if rpmmv else 0), (1 if lpmmv else 0),
                           rpogx, lpogx, rpogy, lpogy, (1 if rpogv else 0), (1 if lpogv else 0),
                           sep=',', file=outfile)
-
-                    # clean up the plot
-                    for a in range(3):
-                        axs[a].clear()
-
-                    axs[0].set_xlim([0, WINDOW_SIZE_SECONDS])
-                    axs[0].set_ylim([PUPIL_MIN_SIZE_MM, PUPIL_MAX_SIZE_MM])
-
-                    for a in (1, 2):
-                        axs[a].sharex(axs[0])
-                        axs[a].set_ylim([-0.5, 0.5])
 
                     xPos = int(elapsed * FRAMES_PER_SECOND % FRAMES_PER_WINDOW)
 
@@ -168,7 +173,15 @@ if __name__ == '__main__':
                                                       (RIGHT, "red", "Right", rpmm),
                                                       (DELTA, "green", "Difference", delta)]:
                         plotPupilData[side][xPos] = diam
-                        axs[0].plot(xData, plotPupilData[side], c=colour, label=label)
+
+                        if line[0][side] == []:
+                            axs[0].set_xlim([0, WINDOW_SIZE_SECONDS])
+                            axs[0].set_ylim([PUPIL_MIN_SIZE_MM, PUPIL_MAX_SIZE_MM])
+                            axs[0].set_title("Pupil size and X/Y position")
+                            axs[0].set(ylabel="Pupil (mm)")
+                            line[0][side], = axs[0].plot(xData, plotPupilData[side], c=colour, label=label)
+                        else:
+                            line[0][side].set_ydata(plotPupilData[side])
 
 
                     # X/Y pos data
@@ -176,25 +189,41 @@ if __name__ == '__main__':
                                                       (RIGHT, "red", "Right", rpogx, rpogy)]:
                         plotXData[side][xPos] = x
                         plotYData[side][xPos] = y
-                        axs[1].plot(xData, plotXData[side], c=colour, label=label)
-                        axs[2].plot(xData, plotYData[side], c=colour, label=label)
+
+                        for i, dat in ((1, plotXData[side]), (2, plotYData[side])):
+                            if line[i][side] == []:
+                                line[i][side], = axs[i].plot(xData, dat, c=colour, label=label)
+                            else:
+                                line[i][side].set_ydata(dat)
 
                     # add the "current time" line
-                    for a in range(3):
-                        axs[a].plot([xPos / FRAMES_PER_SECOND, xPos / FRAMES_PER_SECOND], [-0.5, PUPIL_MAX_SIZE_MM], c="black", label="Current Time")
+                    current_xdata = [xPos / FRAMES_PER_SECOND, xPos / FRAMES_PER_SECOND]
+                    current_ydata = [-0.5, PUPIL_MAX_SIZE_MM]
+                    if currentLine[0] == []:
+                        for a in range(3):
+                            currentLine[a], = axs[a].plot(current_xdata, current_ydata, c="black", label="Current Time")
 
-                    axs[0].set_title("Pupil size and X/Y position")
-                    axs[0].set(ylabel="Pupil (mm)")
-                    axs[1].set(ylabel="X-Pos")
-                    axs[2].set(xlabel="Time (moving window in seconds)", ylabel="Y-Pos")
+                        # we only get here on the first run, so add in the other labels
+                        axs[1].set(ylabel="X-Pos")
+                        axs[2].set(xlabel="Time (moving window in seconds)", ylabel="Y-Pos")
 
-                    for a in range(3):
-                        axs[a].legend()
+                        for a in (1, 2):
+                            axs[a].sharex(axs[0])
+                            axs[a].set_ylim([-0.5, 0.5])
+
+                        for a in range(3):
+                            axs[a].legend()
+                    else:
+                        for a in range(3):
+                            currentLine[a].set_xdata(current_xdata)
+                            currentLine[a].set_ydata(current_ydata)
 
                     plt.pause(1 / GAZEPOINT_REFRESH)
 
                 # end if pupilData is not None
             # end while keepRunning
+
+            webcam.stopPreview()
         # end with ... as sock
     # end with ... as outfile
 

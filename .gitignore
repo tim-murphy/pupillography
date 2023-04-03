@@ -1,2 +1,4 @@
+*.swp
 *.csv
+images
 __pycache__
