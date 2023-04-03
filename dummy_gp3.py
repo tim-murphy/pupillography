@@ -7,9 +7,13 @@ import time
 import pupillography
 
 if __name__ == '__main__':
+    HOST = '127.0.0.1'
+    PORT = 4242
+    ADDRESS = (HOST, PORT)
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         print("Waiting for connection...")
-        sock.bind(pupillography.ADDRESS)
+        sock.bind(ADDRESS)
         sock.listen()
         conn, addr = sock.accept()
         print("Connected.")
@@ -21,10 +25,10 @@ if __name__ == '__main__':
             change_mm = 0.10
 
             keepRunning = True
-            print("Sending data to ", pupillography.HOST, ":", pupillography.PORT, "...", sep="")
+            print("Sending data to ", HOST, ":", PORT, "...", sep="")
 
             while keepRunning:
-                outData = '<REC TIME="' + str(last_time) + '" LPMM="' + str(last_left) + '" LPMMV="1" RPMM="' + str(last_right) + '" RPMMV="1" />\r\n'
+                outData = '<REC TIME="' + str(last_time) + '" LPOGX="0.5" LPOGY="0.5" LPOGV="1" RPOGX="0.4" RPOGY="0.6" RPOGV="1" LPMM="' + str(last_left) + '" LPMMV="1" RPMM="' + str(last_right) + '" RPMMV="1" />\r\n'
 
                 try:
                     conn.send(str.encode(outData))
