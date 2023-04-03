@@ -1,6 +1,7 @@
 # Basic pupillography using the Gazepoint GP3 HD eye tracker
 
 import ctypes
+import cv2
 from datetime import datetime
 import matplotlib.pyplot as plt
 import os
@@ -8,6 +9,7 @@ import re
 import socket
 import sys
 
+from fixation import FixationTargets
 from webcam import PupilWebcam
 
 HOST = '127.0.0.1'
@@ -21,6 +23,9 @@ PUPIL_MIN_SIZE_MM = 0
 PUPIL_MAX_SIZE_MM = 10
 INVALID_READING = 0
 GAZEPOINT_REFRESH = 60
+
+FIXATION_TARGETS = os.path.join(os.path.split(__file__)[0], "gaze_targets", "bear")
+IMAGE_OUTDIR = PupilWebcam.DEFAULT_OUTDIR
 
 RIGHT = 0
 LEFT = 1
@@ -40,6 +45,10 @@ def printUsage():
 
 if __name__ == '__main__':
     ### command line arguments ###
+
+    if not os.path.isdir(FIXATION_TARGETS):
+        print("ERROR: fixation targets missing, should be at:", FIXATION_TARGETS, file=sys.stderr)
+        sys.exit(1)
 
     # default output file name
     outpath = os.path.join(os.path.join(os.path.split(sys.argv[0])[0], "results"),
@@ -112,6 +121,9 @@ if __name__ == '__main__':
             webcam.startPreview()
 
             ctypes.windll.user32.MessageBoxW(0, "Move the webcam preview window and press OK", "Window Position", 0)
+
+            # show fixation targets
+            targets = FixationTargets(FIXATION_TARGETS)
 
             sock.send(str.encode('<SET ID="ENABLE_SEND_TIME" STATE="1" />\r\n'))
             sock.send(str.encode('<SET ID="ENABLE_SEND_PUPILMM" STATE="1" />\r\n'))
@@ -218,7 +230,23 @@ if __name__ == '__main__':
                             currentLine[a].set_xdata(current_xdata)
                             currentLine[a].set_ydata(current_ydata)
 
-                    plt.pause(1 / GAZEPOINT_REFRESH)
+                    # plt.pause(1 / GAZEPOINT_REFRESH)
+                    key = cv2.waitKeyEx(int(1.0 / GAZEPOINT_REFRESH * 1000.0))
+                    if key != -1: # doing this for efficiency
+                        image_outpath = os.path.join(
+                            IMAGE_OUTDIR,
+                            datetime.now().strftime('%Y-%m-%d_%H-%M-%S') + "_" + targets.currentImageName() + ".png")
+
+                        if key == 0x20: # space
+                            webcam.takePhoto(image_outpath)
+                        elif key == 0x250000: # left arrow
+                            webcam.takePhoto(image_outpath)
+                            targets.showPrevTarget()
+                        elif key == 0x270000: # right arrow
+                            webcam.takePhoto(image_outpath)
+                            targets.showNextTarget()
+                        elif key == 0x1B: # escape
+                            keepRunning = False
 
                 # end if pupilData is not None
             # end while keepRunning
