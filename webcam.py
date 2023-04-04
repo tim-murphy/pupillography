@@ -17,7 +17,7 @@ class PupilWebcam:
     IDEAL_CAMERA_RES = (1920, 1080)
     PREVIEW_WINDOW_RES = (960, 540)
 
-    def __init__(self, cameraIndex=0):
+    def __init__(self, cameraIndex=1):
         self.camera_index = cameraIndex
         os.makedirs(self.DEFAULT_OUTDIR, exist_ok=True)
 

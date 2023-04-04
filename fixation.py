@@ -32,6 +32,7 @@ class FixationTargets:
         cv2.destroyAllWindows()
 
     def showImage(self):
+        print("Showing target:", self.currentImageName())
         img = cv2.imread(self.targets[self.target_index])
         cv2.imshow(self.WINDOW_TITLE, img)
         cv2.waitKey(10)

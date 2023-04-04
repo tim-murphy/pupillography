@@ -57,7 +57,7 @@ class EyeData:
                 sock.send(str.encode('<SET ID="ENABLE_SEND_POG_RIGHT" STATE="1" />\r\n'))
                 sock.send(str.encode('<SET ID="ENABLE_SEND_DATA" STATE="1" />\r\n'))
 
-                print("SystemTime,ElapsedTime,Right Pupil,Left Pupil,Difference,Right Pupil Valid,Left Pupil Valid,Right X,Left X,Right Y,Left Y,Left Y,Right Pos Valid,Left Pos Valid", file=outfile)
+                print("SystemTime,ElapsedTime,Right Pupil,Left Pupil,Difference,Right Pupil Valid,Left Pupil Valid,Right X,Left X,Right Y,Left Y,Right Pos Valid,Left Pos Valid", file=outfile)
 
                 firstDataTime = None
                 while self.keepRunning:
